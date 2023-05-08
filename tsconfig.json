@@ -3,6 +3,8 @@
     "jsx": "react",
     "moduleResolution": "node",
     "esModuleInterop": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
     "lib": ["es2015", "dom"]
   }
 }

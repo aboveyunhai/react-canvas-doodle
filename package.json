@@ -11,7 +11,8 @@
   "scripts": {
     "build": "tsup src/index.tsx",
     "dev": "tsup src/index.tsx --watch",
-    "dev:website": "turbo run dev --filter=website..."
+    "dev:website": "turbo run dev --filter=website...",
+    "lint": "eslint src/*"
   },
   "keywords": [
     "react",
@@ -22,14 +23,32 @@
   "author": "aboveyunhai",
   "license": "MIT",
   "devDependencies": {
+    "@react-hook/resize-observer": "^1.2.6",
     "@types/node": "^18.11.13",
     "@types/react": "^18.0.26",
+    "@typescript-eslint/eslint-plugin": "^5.57.0",
+    "@typescript-eslint/parser": "^5.57.0",
+    "catenary-curve": "^2.0.1",
+    "eslint": "^8.36.0",
+    "eslint-config-prettier": "^8.8.0",
+    "eslint-plugin-prettier": "^4.2.1",
+    "eslint-plugin-react": "^7.32.2",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "lazy-brush": "^2.0.1",
+    "prettier": "^2.8.7",
+    "prop-types": "^15.8.1",
     "react": "^18.2.0",
+    "resize-observer-polyfill": "^1.5.1",
     "tsup": "^6.4.0",
     "turbo": "^1.6.3",
     "typescript": "^4.8.4"
   },
   "peerDependencies": {
-    "react": "^18.0.0"
+    "@react-hook/resize-observer": "^1.2.6",
+    "catenary-curve": "^2.0.1",
+    "lazy-brush": "^2.0.1",
+    "prop-types": "^15.8.1",
+    "react": "^18.0.0",
+    "resize-observer-polyfill": "^1.5.1"
   }
 }

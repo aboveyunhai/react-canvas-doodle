@@ -8,3 +8,16 @@ html,
 body {
   height: 100%;
 }
+
+.flex {
+  display: flex;
+}
+.flex-col {
+  flex-direction: column;
+}
+.gap-2 {
+  gap: 8px;
+}
+.p-2 {
+  padding: 8px;
+}
