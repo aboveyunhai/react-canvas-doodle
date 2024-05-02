@@ -36,9 +36,7 @@
     "eslint-plugin-react-hooks": "^4.6.0",
     "lazy-brush": "^2.0.1",
     "prettier": "^2.8.7",
-    "prop-types": "^15.8.1",
     "react": "^18.2.0",
-    "resize-observer-polyfill": "^1.5.1",
     "tsup": "^6.4.0",
     "turbo": "^1.6.3",
     "typescript": "^4.8.4"
@@ -47,8 +45,6 @@
     "@react-hook/resize-observer": "^1.2.6",
     "catenary-curve": "^2.0.1",
     "lazy-brush": "^2.0.1",
-    "prop-types": "^15.8.1",
-    "react": "^18.0.0",
-    "resize-observer-polyfill": "^1.5.1"
+    "react": "^18.0.0"
   }
 }

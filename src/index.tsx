@@ -1,10 +1,13 @@
 import React, {
   CSSProperties,
+  RefObject,
   forwardRef,
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useRef,
+  useState,
 } from 'react';
 import { LazyBrush } from 'lazy-brush';
 import useResizeObserver from '@react-hook/resize-observer';
@@ -63,8 +66,8 @@ export interface CanvasProps {
   catenaryColor?: string;
   catenaryOption?: CatenaryOptions;
   backgroundColor?: CSSProperties['backgroundColor'];
-  canvasWidth?: number;
-  canvasHeight?: number;
+  width: number;
+  height: number;
   disabled?: boolean;
   imgSrc?: string;
   initData?: CanvasData;
@@ -72,6 +75,7 @@ export interface CanvasProps {
   readonly?: boolean;
   erase?: boolean;
   autoScaleOnResize?: boolean;
+  pressure?: boolean;
 }
 
 export interface CanvasRefProps {
@@ -81,7 +85,7 @@ export interface CanvasRefProps {
 
 // this component is client side only
 // use dynamic import for next.js
-export const CanvasPanel = forwardRef<CanvasRefProps, CanvasProps>(
+const Doodle = forwardRef<CanvasRefProps, CanvasProps>(
   (
     {
       onChange = null,
@@ -92,14 +96,15 @@ export const CanvasPanel = forwardRef<CanvasRefProps, CanvasProps>(
       catenaryOption,
       gridProps,
       backgroundColor = '#FFF',
-      canvasWidth = 400,
-      canvasHeight = 400,
+      width = 400,
+      height = 400,
       disabled = false,
       imgSrc = '',
       initData,
       immediateLoading = false,
       readonly = false,
       loadTimeOffset = 5,
+      pressure = true,
     },
     ref,
   ) => {
@@ -112,7 +117,14 @@ export const CanvasPanel = forwardRef<CanvasRefProps, CanvasProps>(
     const displayGrid = gridProps?.displayGrid ?? true;
     const gridColor = gridProps?.gridColor ?? 'rgba(150,150,150,0.3)';
 
+    // prev
+    const [prevRect, setPrevRect] = useState({
+      width,
+      height,
+    });
+
     const containerRef = useRef<HTMLDivElement>(null);
+
     const gridRef = useRef<HTMLCanvasElement>(null);
     const drawingRef = useRef<HTMLCanvasElement>(null);
     const tempRef = useRef<HTMLCanvasElement>(null);
@@ -158,13 +170,13 @@ export const CanvasPanel = forwardRef<CanvasRefProps, CanvasProps>(
         // Draw mouse point (the one directly at the cursor)
         ctx.beginPath();
         ctx.fillStyle = bColor;
-        ctx.arc(pointer.x, pointer.y, brushRadius / 2, 0, Math.PI * 2, true);
+        ctx.arc(pointer.x, pointer.y, brushRadius, 0, Math.PI * 2, true);
         ctx.fill();
 
         // Draw brush preview
         ctx.beginPath();
         ctx.fillStyle = bColor;
-        ctx.arc(brush.x, brush.y, brushRadius / 2, 0, Math.PI * 2, true);
+        ctx.arc(brush.x, brush.y, brushRadius, 0, Math.PI * 2, true);
         ctx.fill();
 
         // Draw catenary
@@ -208,105 +220,73 @@ export const CanvasPanel = forwardRef<CanvasRefProps, CanvasProps>(
     //   this.image.src = this.props.imgSrc;
     // };
 
-    const loop = useCallback(
-      ({ once = false } = {}) => {
-        if (
-          (mouseHasMovedRef.current || valuesChangedRef.current) &&
-          lazyRef.current
-        ) {
+    const paintCursor = useCallback(() => {
+      if (lazyRef.current) {
+        if (!readonly && interfaceRef.current) {
           const pointer = lazyRef.current.getPointerCoordinates();
           const brush = lazyRef.current.getBrushCoordinates();
-
-          if (!readonly && interfaceRef.current) {
-            drawInterface(interfaceRef.current, { pointer, brush });
-          }
-          mouseHasMovedRef.current = false;
-          valuesChangedRef.current = false;
+          drawInterface(interfaceRef.current, { pointer, brush });
         }
-
-        if (!once) {
-          window.requestAnimationFrame(() => {
-            loop();
-          });
-        }
-      },
-      [drawInterface, readonly],
-    );
-
-    const handleCanvasResize = useCallback(
-      (entry: ResizeObserverEntry) => {
-        const { width, height } = entry.contentRect;
-        // if interface exists, all other layers shall exist
-        if (
-          interfaceRef.current &&
-          drawingRef.current &&
-          tempRef.current &&
-          gridRef.current
-        ) {
-          setCanvasSize(interfaceRef.current, width, height);
-          setCanvasSize(drawingRef.current, width, height);
-          setCanvasSize(tempRef.current, width, height);
-          setCanvasSize(gridRef.current, width, height);
-
-          if (displayGrid) drawGrid(gridRef.current, gridColor);
-        }
-
-        // this.drawImage();
-        loop({ once: true });
-      },
-      [gridColor, displayGrid, loop],
-    );
-
-    useResizeObserver(containerRef, handleCanvasResize);
-
-    const drawPoints = ({
-      points,
-      brushColor,
-      brushRadius,
-      pointerEvent,
-    }: {
-      points: Array<Point>;
-      brushColor: NonNullable<CSSProperties['color']>;
-      brushRadius: number;
-      pointerEvent?: PointerEvent;
-    }) => {
-      const ctxTemp = tempRef.current?.getContext('2d');
-      const ctxDrawing = drawingRef.current?.getContext('2d');
-      if (!ctxTemp || !ctxDrawing) return;
-      ctxTemp.lineJoin = 'round';
-      ctxTemp.lineCap = 'round';
-      ctxTemp.strokeStyle = brushColor === 'erase' ? '#dbb7bb' : brushColor;
-
-      ctxDrawing.globalCompositeOperation =
-        brushColor === 'erase' ? 'destination-out' : 'source-over';
-
-      ctxTemp.clearRect(0, 0, ctxTemp.canvas.width, ctxTemp.canvas.height);
-
-      // ctxTemp.lineWidth = pointerEvent ? this.getLineWidth(pointerEvent, brushRadius) * 2 : brushRadius * 2;
-      ctxTemp.lineWidth = brushRadius;
-
-      let p1 = points[0];
-      let p2 = points[1];
-
-      if (p1 === undefined || p2 === undefined) return;
-      ctxTemp.moveTo(p2.x, p2.y);
-      ctxTemp.beginPath();
-
-      for (let i = 1; i < points.length; i++) {
-        // we pick the point between pi+1 & pi+2 as the
-        // end point and p1 as our control point
-        const midPoint = pointBtw(p1!, p2!, 1 / 2);
-        ctxTemp.quadraticCurveTo(p1!.x, p1!.y, midPoint.x, midPoint.y);
-        p1 = points[i];
-        p2 = points[i + 1];
       }
-      // Draw last line as a straight line while
-      // we wait for the next point to be able to calculate
-      // the bezier control point
-      // ctxTemp.quadraticCurveTo(midPoint.x, midPoint.y, p1.x, p1.y);
-      // this.ctx.temp.lineTo(p1.x, p1.y);
-      ctxTemp.stroke();
+    }, [drawInterface, readonly]);
+
+    type PointContext = {
+      temp: CanvasRenderingContext2D;
+      drawing: CanvasRenderingContext2D;
     };
+
+    const drawPoints = useCallback(
+      (
+        points: Array<Point>,
+        ctx: PointContext,
+        {
+          brushColor,
+          brushRadius,
+        }: {
+          brushColor: NonNullable<CSSProperties['color']>;
+          brushRadius: number;
+          pointerEvent?: PointerEvent;
+          immediate?: boolean;
+        },
+      ) => {
+        ctx.temp.lineJoin = 'round';
+        ctx.temp.lineCap = 'round';
+        ctx.temp.strokeStyle = brushColor === 'erase' ? '#dbb7bb' : brushColor;
+
+        ctx.drawing.globalCompositeOperation =
+          brushColor === 'erase' ? 'destination-out' : 'source-over';
+
+        ctx.temp.clearRect(0, 0, ctx.temp.canvas.width, ctx.temp.canvas.height);
+
+        // ctxTemp.lineWidth = getLineWidth(brushRadius, pointerEvent);
+        ctx.temp.lineWidth = brushRadius * 2;
+
+        let p1 = points[0];
+        let p2 = points[1];
+
+        if (p1 === undefined || p2 === undefined) return;
+        ctx.drawing.moveTo(p2.x, p2.y);
+        ctx.temp.beginPath();
+
+        for (let i = 1; i < points.length; i++) {
+          // we pick the point between pi+1 & pi+2 as
+          // end point and p1 as our control point
+          const midPoint = pointBtw(p1, p2, 1 / 2);
+          ctx.temp.quadraticCurveTo(p1.x, p1.y, midPoint.x, midPoint.y);
+          p1 = points[i];
+          p2 = points[i + 1];
+          ctx.temp.stroke();
+        }
+
+        // Draw last line as a straight line while
+        // we wait for the next point to be able to calculate
+        // the bezier control point
+        // ctxTemp.quadraticCurveTo(midPoint.x, midPoint.y, p1.x, p1.y);
+        // ctxTemp.lineTo(p1.x, p1.y);
+        // ctxTemp.stroke();
+      },
+      [],
+    );
 
     const saveLine = useCallback(
       ({ brushColor: bColor, brushRadius: bRadius }: BrushProps = {}) => {
@@ -348,8 +328,9 @@ export const CanvasPanel = forwardRef<CanvasRefProps, CanvasProps>(
       [brushColor, brushRadius, triggerOnChange],
     );
 
+    // painting
     const simulateDrawingLines = useCallback(
-      ({ lines, immediate }: { lines: Array<Line>; immediate: boolean }) => {
+      (lines: Array<Line>, ctx: PointContext, immediate?: boolean) => {
         // Simulate live-drawing of the loaded lines
         // TODO use a generator
         let curTime = 0;
@@ -360,8 +341,7 @@ export const CanvasPanel = forwardRef<CanvasRefProps, CanvasProps>(
           // Draw all at once if immediate flag is set, instead of using setTimeout
           if (immediate) {
             // Draw the points
-            drawPoints({
-              points,
+            drawPoints(points, ctx, {
               brushColor,
               brushRadius,
             });
@@ -376,8 +356,7 @@ export const CanvasPanel = forwardRef<CanvasRefProps, CanvasProps>(
           for (let i = 1; i < points.length; i++) {
             curTime += timeoutGap;
             window.setTimeout(() => {
-              drawPoints({
-                points: points.slice(0, i + 1),
+              drawPoints(points.slice(0, i + 1), ctx, {
                 brushColor,
                 brushRadius,
               });
@@ -392,7 +371,7 @@ export const CanvasPanel = forwardRef<CanvasRefProps, CanvasProps>(
           }, curTime);
         });
       },
-      [loadTimeOffset, saveLine],
+      [drawPoints, loadTimeOffset, saveLine],
     );
 
     const clear = useCallback(() => {
@@ -413,44 +392,43 @@ export const CanvasPanel = forwardRef<CanvasRefProps, CanvasProps>(
       triggerOnChange();
     }, [triggerOnChange]);
 
-    const loadData = (saveData: CanvasData, immediate = immediateLoading) => {
-      const { lines, width, height } = saveData;
-      if (!lines || typeof lines.push !== 'function') {
-        return;
-      }
+    const paintData = useCallback(
+      (data: CanvasData, ctx: PointContext) => {
+        const { lines, width: canvasWidth, height: canvasHeight } = data;
+        if (!lines || typeof lines.push !== 'function') {
+          return;
+        }
 
-      clear();
+        clear();
 
-      if (width === canvasWidth && height === canvasHeight) {
-        simulateDrawingLines({
-          lines,
-          immediate,
-        });
-      } else {
-        // we need to rescale the lines based on saved & current dimensions
-        const scaleX = canvasWidth / width;
-        const scaleY = canvasHeight / height;
+        if (width === canvasWidth && height === canvasHeight) {
+          simulateDrawingLines(lines, ctx);
+        } else {
+          // we need to rescale the lines based on saved & current dimensions
+          const scaleX = canvasWidth / width;
+          const scaleY = canvasHeight / height;
 
-        const scaleAvg = (scaleX + scaleY) / 2;
+          const scaleAvg = (scaleX + scaleY) / 2;
 
-        simulateDrawingLines({
-          lines: lines.map((line) => ({
-            ...line,
-            points: line.points.map((p) => ({
-              x: p.x * scaleX,
-              y: p.y * scaleY,
+          simulateDrawingLines(
+            lines.map((line) => ({
+              ...line,
+              points: line.points.map((p) => ({
+                x: p.x * scaleX,
+                y: p.y * scaleY,
+              })),
+              brushRadius: line.brushRadius * scaleAvg,
             })),
-            brushRadius: line.brushRadius * scaleAvg,
-          })),
-          immediate,
-        });
-      }
-    };
+            ctx,
+          );
+        }
+      },
+      [clear, height, simulateDrawingLines, width],
+    );
 
     const handlePointerMove = useCallback(
       (ev: PointerEvent, x: number, y: number) => {
         if (disabled) return;
-
         lazyRef.current?.update({ x, y });
         const isDisabled = !lazyRef.current?.isEnabled();
 
@@ -469,26 +447,33 @@ export const CanvasPanel = forwardRef<CanvasRefProps, CanvasProps>(
           pointsRef.current.push(point);
         }
 
-        if (isDrawingRef.current) {
+        const tempCtx = tempRef.current?.getContext('2d');
+        const drawingCtx = drawingRef.current?.getContext('2d');
+        if (isDrawingRef.current && tempCtx && drawingCtx) {
           // Add new point
           pointsRef.current.push(lazyRef.current?.brush.toObject());
 
           // Draw current points
-          drawPoints({
-            points: pointsRef.current,
-            brushColor: point.type === 'erase' ? 'erase' : brushColor,
-            brushRadius: brushRadius,
-            pointerEvent: ev,
-          });
+          drawPoints(
+            pointsRef.current,
+            {
+              temp: tempCtx,
+              drawing: drawingCtx,
+            },
+            {
+              brushColor: point.type === 'erase' ? 'erase' : brushColor,
+              brushRadius: brushRadius,
+              pointerEvent: ev,
+            },
+          );
         }
-        mouseHasMovedRef.current = true;
       },
-      [brushColor, brushRadius, disabled, erase],
+      [brushColor, brushRadius, disabled, drawPoints, erase],
     );
 
     const handleDrawStart = useCallback(
       (ev: PointerEvent) => {
-        // e.preventDefault();
+        ev.preventDefault();
         if (!interfaceRef.current) return;
         if (!disabled) {
           interfaceRef.current.focus();
@@ -506,20 +491,29 @@ export const CanvasPanel = forwardRef<CanvasRefProps, CanvasProps>(
 
     const handleDrawMove = useCallback(
       (ev: PointerEvent) => {
-        // e.preventDefault();
-        if (!interfaceRef.current) return;
-        const { x, y } = getPointerPos(ev, interfaceRef.current);
-        handlePointerMove(ev, x, y);
+        ev.preventDefault();
+        window.requestAnimationFrame(() => {
+          if (
+            !interfaceRef.current ||
+            !drawingRef.current ||
+            !tempRef.current
+          ) {
+            return;
+          }
+
+          const { x, y } = getPointerPos(ev, interfaceRef.current);
+          handlePointerMove(ev, x, y);
+        });
       },
       [handlePointerMove],
     );
 
     const handleDrawEnd = useCallback(
       (ev: PointerEvent) => {
-        // e.preventDefault();
+        ev.preventDefault();
 
         // Draw to this end pos
-        // this.handleDrawMove(e);
+        // handleDrawMove(e);
 
         // Stop drawing & save the drawn line
         isDrawingRef.current = false;
@@ -529,19 +523,64 @@ export const CanvasPanel = forwardRef<CanvasRefProps, CanvasProps>(
       [saveLine],
     );
 
+    const handleDrawLeave = useCallback((ev: PointerEvent) => {
+      ev.preventDefault();
+      // Stop drawing & save the drawn line
+      isDrawingRef.current = false;
+      isPressingRef.current = false;
+    }, []);
+
     const undo = useCallback(() => {
       const prev = linesRef.current.slice(0, -1);
       clear();
-      simulateDrawingLines({ lines: prev, immediate: true });
+      const tempCtx = tempRef.current?.getContext('2d');
+      const drawingCtx = drawingRef.current?.getContext('2d');
+      if (tempCtx && drawingCtx) {
+        simulateDrawingLines(
+          prev,
+          {
+            temp: tempCtx,
+            drawing: drawingCtx,
+          },
+          true,
+        );
+      }
       triggerOnChange();
     }, [clear, simulateDrawingLines, triggerOnChange]);
 
+    const getLineWidth = useCallback(
+      (brushRadius: number, ev?: PointerEvent) => {
+        switch (ev?.pointerType) {
+          case 'touch': {
+            if (ev.width < 10 && ev.height < 10) {
+              return (ev.width + ev.height) * 2 + 10;
+            } else {
+              return (ev.width + ev.height - 40) / 2;
+            }
+          }
+          case 'pen':
+            return ev.pressure * 8;
+          default:
+            return brushRadius;
+        }
+      },
+      [],
+    );
+
     // on mount
     useEffect(() => {
-      loop();
+      const interfaceCanvas = interfaceRef.current;
+
+      function cursorMove() {
+        window.requestAnimationFrame(() => {
+          paintCursor();
+        });
+      }
+
+      interfaceCanvas?.addEventListener('mousemove', cursorMove);
 
       if (initData) {
-        loadData(initData, true);
+        // loadData(initData, true);
         // window.setTimeout(() => {
         //   const initX = window.innerWidth / 2;
         //   const initY = window.innerHeight / 2;
@@ -556,70 +595,128 @@ export const CanvasPanel = forwardRef<CanvasRefProps, CanvasProps>(
         //   mouseHasMovedRef.current = true;
         //   valuesChangedRef.current = true;
         //   clear();
-
         //   // Load saveData from prop if it exists
         // }, 100);
       }
-    }, []);
+
+      return function cleanUp() {
+        interfaceCanvas?.removeEventListener('mousemove', cursorMove);
+      };
+    }, [initData, paintCursor]);
 
     useEffect(() => {
       const canvas = interfaceRef.current;
       if (!canvas || readonly) return;
+
       canvas.addEventListener('pointerdown', handleDrawStart);
       canvas.addEventListener('pointermove', handleDrawMove);
       canvas.addEventListener('pointerup', handleDrawEnd);
-      canvas.addEventListener('pointerleave', handleDrawEnd);
+      canvas.addEventListener('pointerleave', handleDrawLeave);
 
-      return () => {
+      return function cleanUp() {
         canvas.removeEventListener('pointerdown', handleDrawStart);
         canvas.removeEventListener('pointermove', handleDrawMove);
         canvas.removeEventListener('pointerup', handleDrawEnd);
-        canvas.removeEventListener('pointerleave', handleDrawEnd);
+        canvas.removeEventListener('pointerleave', handleDrawLeave);
       };
-    }, [handleDrawEnd, handleDrawMove, handleDrawStart, readonly]);
+    }, [
+      handleDrawEnd,
+      handleDrawLeave,
+      handleDrawMove,
+      handleDrawStart,
+      readonly,
+    ]);
 
-    // utilities
-    useImperativeHandle(
-      ref,
-      () => {
-        return {
-          getChainLength() {
-            return lazyRef.current?.getRadius();
-          },
-          setChainLength(chainLength: number) {
-            const canvas = interfaceRef.current;
-            if (canvas && lazyRef.current) {
-              lazyRef.current.setRadius(chainLength);
-              const pointer = lazyRef.current.getPointerCoordinates();
-              let brush = lazyRef.current.getBrushCoordinates();
-              const distance = lazyRef.current.getDistance();
-              if (distance > 0 && distance > chainLength) {
-                brush = pointBtw(pointer, brush, chainLength / distance);
-              }
-              drawInterface(canvas, { pointer, brush });
-            }
-          },
-          undo: () => undo(),
+    // div container resize causes rerender
+    // use requestAnimationFrame to handle canvas element flicking issue
+    useLayoutEffect(
+      function interfaceAndPrevRect() {
+        setPrevRect({
+          width,
+          height,
+        });
+        const rid = window.requestAnimationFrame(() => {
+          if (interfaceRef.current) {
+            setCanvasSize(interfaceRef.current, width, height);
+          }
+        });
+        return function cleanUp() {
+          window.cancelAnimationFrame(rid);
         };
       },
-      [drawInterface, undo],
+      [height, width],
     );
 
-    // const getLineWidth = (e, brushRadius) => {
-    //   switch (e.pointerType) {
-    //     case "touch": {
-    //       if (e.width < 10 && e.height < 10) {
-    //         return (e.width + e.height) * 2 + 10;
-    //       } else {
-    //         return (e.width + e.height - 40) / 2;
-    //       }
-    //     }
-    //     case "pen":
-    //       return e.pressure * 8;
-    //     default:
-    //       return brushRadius;
-    //   }
-    // };
+    useLayoutEffect(
+      function gridCanvas() {
+        const rid = window.requestAnimationFrame(() => {
+          if (gridRef.current) {
+            setCanvasSize(gridRef.current, width, height);
+            if (displayGrid) {
+              drawGrid(gridRef.current, gridColor);
+            }
+          }
+        });
+        return function cleanUp() {
+          window.cancelAnimationFrame(rid);
+        };
+      },
+      [displayGrid, gridColor, height, width],
+    );
+
+    useLayoutEffect(
+      function tempAndDrawingCanvas() {
+        const rid = window.requestAnimationFrame(() => {
+          if (tempRef.current) {
+            setCanvasSize(tempRef.current, width, height);
+          }
+          if (drawingRef.current) {
+            setCanvasSize(drawingRef.current, width, height);
+          }
+          const tempCtx = tempRef.current?.getContext('2d');
+          const drawingCtx = drawingRef.current?.getContext('2d');
+          if (tempCtx && drawingCtx) {
+            paintData(
+              { lines: linesRef.current, width, height },
+              {
+                temp: tempCtx,
+                drawing: drawingCtx,
+              },
+            );
+          }
+        });
+        return function cleanUp() {
+          window.cancelAnimationFrame(rid);
+        };
+      },
+      [height, paintData, width],
+    );
+
+    // // utilities
+    useImperativeHandle(
+      ref,
+      () => ({
+        getChainLength() {
+          return lazyRef.current?.getRadius();
+        },
+        setChainLength(chainLength: number) {
+          const canvas = interfaceRef.current;
+          if (canvas && lazyRef.current) {
+            lazyRef.current.setRadius(chainLength);
+            const pointer = lazyRef.current.getPointerCoordinates();
+            let brush = lazyRef.current.getBrushCoordinates();
+            const distance = lazyRef.current.getDistance();
+            if (distance > 0 && distance > chainLength) {
+              brush = pointBtw(pointer, brush, chainLength / distance);
+            }
+            drawInterface(canvas, { pointer, brush });
+          }
+        },
+        undo: () => undo(),
+        clear: () => clear(),
+      }),
+      [clear, drawInterface, undo],
+    );
 
     return (
       <div
@@ -628,8 +725,8 @@ export const CanvasPanel = forwardRef<CanvasRefProps, CanvasProps>(
           position: 'relative',
           background: backgroundColor,
           touchAction: 'none',
-          width: canvasWidth,
-          height: canvasHeight,
+          width: width,
+          height: height,
         }}
         ref={containerRef}
       >
@@ -664,9 +761,12 @@ export const CanvasPanel = forwardRef<CanvasRefProps, CanvasProps>(
             display: readonly ? 'none' : 'block',
           }}
         />
+        {/* new canvas */}
       </div>
     );
   },
 );
 
-CanvasPanel.displayName = 'CanvasDoodle';
+Doodle.displayName = 'Doodle';
+
+export const CanvasDoodle = React.memo(Doodle);
