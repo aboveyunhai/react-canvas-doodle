@@ -1,6 +1,6 @@
 {
   "name": "react-canvas-doodle",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "description": "react doodle library",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -23,18 +23,15 @@
   "author": "aboveyunhai",
   "license": "MIT",
   "devDependencies": {
-    "@react-hook/resize-observer": "^1.2.6",
     "@types/node": "^18.11.13",
     "@types/react": "^18.0.26",
     "@typescript-eslint/eslint-plugin": "^5.57.0",
     "@typescript-eslint/parser": "^5.57.0",
-    "catenary-curve": "^2.0.1",
     "eslint": "^8.36.0",
     "eslint-config-prettier": "^8.8.0",
     "eslint-plugin-prettier": "^4.2.1",
     "eslint-plugin-react": "^7.32.2",
     "eslint-plugin-react-hooks": "^4.6.0",
-    "lazy-brush": "^2.0.1",
     "prettier": "^2.8.7",
     "react": "^18.2.0",
     "tsup": "^6.4.0",
@@ -42,9 +39,6 @@
     "typescript": "^4.8.4"
   },
   "peerDependencies": {
-    "@react-hook/resize-observer": "^1.2.6",
-    "catenary-curve": "^2.0.1",
-    "lazy-brush": "^2.0.1",
     "react": "^18.0.0"
   }
 }

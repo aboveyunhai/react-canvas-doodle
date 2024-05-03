@@ -1,6 +1,5 @@
 import React, {
   CSSProperties,
-  RefObject,
   forwardRef,
   useCallback,
   useEffect,
@@ -9,9 +8,6 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { LazyBrush } from 'lazy-brush';
-import useResizeObserver from '@react-hook/resize-observer';
-import { CatenaryOptions, drawResult, getCatenaryCurve } from 'catenary-curve';
 import {
   clearCanvas,
   drawGrid,
@@ -58,13 +54,8 @@ type CanvasData = {
 export interface CanvasProps {
   onChange?: () => void;
   loadTimeOffset?: number;
-  initProps?: {
-    chainLength?: number;
-  };
   brushProps?: BrushProps;
   gridProps?: GridProps;
-  catenaryColor?: string;
-  catenaryOption?: CatenaryOptions;
   backgroundColor?: CSSProperties['backgroundColor'];
   width: number;
   height: number;
@@ -79,8 +70,8 @@ export interface CanvasProps {
 }
 
 export interface CanvasRefProps {
-  getChainLength: () => number;
-  setChainLength: (chainLength: number) => void;
+  undo: () => void;
+  clear: () => void;
 }
 
 // this component is client side only
@@ -90,16 +81,12 @@ const Doodle = forwardRef<CanvasRefProps, CanvasProps>(
     {
       onChange = null,
       brushProps,
-      initProps,
       erase = false,
-      catenaryColor = '#0a0302',
-      catenaryOption,
       gridProps,
       backgroundColor = '#FFF',
       width = 400,
       height = 400,
       disabled = false,
-      imgSrc = '',
       initData,
       immediateLoading = false,
       readonly = false,
@@ -108,12 +95,6 @@ const Doodle = forwardRef<CanvasRefProps, CanvasProps>(
     },
     ref,
   ) => {
-    const initConfigs = {
-      chainLength: 0,
-      ...initProps,
-    };
-    const brushColor = brushProps?.brushColor ?? '#444';
-    const brushRadius = brushProps?.brushRadius ?? 10;
     const displayGrid = gridProps?.displayGrid ?? true;
     const gridColor = gridProps?.gridColor ?? 'rgba(150,150,150,0.3)';
 
@@ -130,23 +111,14 @@ const Doodle = forwardRef<CanvasRefProps, CanvasProps>(
     const tempRef = useRef<HTMLCanvasElement>(null);
     const interfaceRef = useRef<HTMLCanvasElement>(null);
 
-    const mouseHasMovedRef = useRef<boolean>(true);
+    const brushRef = useRef({
+      brushColor: brushProps?.brushColor ?? '#444',
+      brushRadius: brushProps?.brushRadius ?? 10,
+    });
+
     const valuesChangedRef = useRef<boolean>(true);
     const isDrawingRef = useRef<boolean>(false);
     const isPressingRef = useRef<boolean>(false);
-    const lazyRef = useRef<LazyBrush>(
-      (() => {
-        const lazy = new LazyBrush({
-          enabled: true,
-          initialPoint: {
-            x: window.innerWidth / 2,
-            y: window.innerHeight / 2,
-          },
-        });
-        lazy.setRadius(initConfigs.chainLength);
-        return lazy;
-      })(),
-    );
 
     const pointsRef = useRef<Array<Point>>([]);
     const linesRef = useRef<Array<Line>>([]);
@@ -165,70 +137,53 @@ const Doodle = forwardRef<CanvasRefProps, CanvasProps>(
         ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
         // Color brush preview according to erase prop
-        const bColor = erase ? '#dbb7bb' : brushColor;
+        const bColor = erase ? '#dbb7bb' : brushRef.current.brushColor;
 
         // Draw mouse point (the one directly at the cursor)
         ctx.beginPath();
         ctx.fillStyle = bColor;
-        ctx.arc(pointer.x, pointer.y, brushRadius, 0, Math.PI * 2, true);
+        ctx.arc(
+          pointer.x,
+          pointer.y,
+          brushRef.current.brushRadius,
+          0,
+          Math.PI * 2,
+          true,
+        );
         ctx.fill();
 
         // Draw brush preview
         ctx.beginPath();
         ctx.fillStyle = bColor;
-        ctx.arc(brush.x, brush.y, brushRadius, 0, Math.PI * 2, true);
+        ctx.arc(
+          brush.x,
+          brush.y,
+          brushRef.current.brushRadius,
+          0,
+          Math.PI * 2,
+          true,
+        );
         ctx.fill();
-
-        // Draw catenary
-        if (lazyRef.current?.isEnabled()) {
-          ctx.beginPath();
-          ctx.lineWidth = 2;
-          ctx.lineCap = 'round';
-          ctx.setLineDash([2, 4]);
-          ctx.strokeStyle = catenaryColor;
-          const result = getCatenaryCurve(
-            brush,
-            pointer,
-            lazyRef.current.radius,
-            catenaryOption,
-          );
-          drawResult(result, ctx);
-          ctx.stroke();
-
-          // Draw chain endpoint (the one in the center of the brush preview)
-          ctx.beginPath();
-          ctx.fillStyle = catenaryColor;
-          ctx.arc(brush.x, brush.y, 2, 0, Math.PI * 2, true);
-          ctx.fill();
-        }
       },
-      [brushColor, brushRadius, catenaryColor, catenaryOption, erase],
+      [erase],
     );
 
-    // drawImage = () => {
-    //   if (!this.props.imgSrc) return;
-
-    //   // Load the image
-    //   this.image = new Image();
-
-    //   // Prevent SecurityError "Tainted canvases may not be exported."
-    //   this.image.crossOrigin = "anonymous";
-
-    //   // Draw the image once loaded
-    //   this.image.onload = () =>
-    //     drawImage({ ctx: this.ctx.grid, img: this.image });
-    //   this.image.src = this.props.imgSrc;
-    // };
-
-    const paintCursor = useCallback(() => {
-      if (lazyRef.current) {
+    const paintCursor = useCallback(
+      (evt: PointerEvent) => {
         if (!readonly && interfaceRef.current) {
-          const pointer = lazyRef.current.getPointerCoordinates();
-          const brush = lazyRef.current.getBrushCoordinates();
-          drawInterface(interfaceRef.current, { pointer, brush });
+          const rect = interfaceRef.current?.getBoundingClientRect();
+          if (!rect) {
+            return;
+          }
+          const pointer = {
+            x: evt.clientX - rect.left,
+            y: evt.clientY - rect.top,
+          };
+          drawInterface(interfaceRef.current, { pointer, brush: pointer });
         }
-      }
-    }, [drawInterface, readonly]);
+      },
+      [drawInterface, readonly],
+    );
 
     type PointContext = {
       temp: CanvasRenderingContext2D;
@@ -256,7 +211,7 @@ const Doodle = forwardRef<CanvasRefProps, CanvasProps>(
         ctx.drawing.globalCompositeOperation =
           brushColor === 'erase' ? 'destination-out' : 'source-over';
 
-        ctx.temp.clearRect(0, 0, ctx.temp.canvas.width, ctx.temp.canvas.height);
+        // ctx.temp.clearRect(0, 0, ctx.temp.canvas.width, ctx.temp.canvas.height);
 
         // ctxTemp.lineWidth = getLineWidth(brushRadius, pointerEvent);
         ctx.temp.lineWidth = brushRadius * 2;
@@ -264,13 +219,18 @@ const Doodle = forwardRef<CanvasRefProps, CanvasProps>(
         let p1 = points[0];
         let p2 = points[1];
 
-        if (p1 === undefined || p2 === undefined) return;
+        if (!p1 || !p2) {
+          return;
+        }
         ctx.drawing.moveTo(p2.x, p2.y);
         ctx.temp.beginPath();
 
         for (let i = 1; i < points.length; i++) {
           // we pick the point between pi+1 & pi+2 as
           // end point and p1 as our control point
+          if (!p1 || !p2) {
+            return;
+          }
           const midPoint = pointBtw(p1, p2, 1 / 2);
           ctx.temp.quadraticCurveTo(p1.x, p1.y, midPoint.x, midPoint.y);
           p1 = points[i];
@@ -281,9 +241,9 @@ const Doodle = forwardRef<CanvasRefProps, CanvasProps>(
         // Draw last line as a straight line while
         // we wait for the next point to be able to calculate
         // the bezier control point
-        // ctxTemp.quadraticCurveTo(midPoint.x, midPoint.y, p1.x, p1.y);
-        // ctxTemp.lineTo(p1.x, p1.y);
-        // ctxTemp.stroke();
+        // ctx.temp.quadraticCurveTo(midPoint.x, midPoint.y, p1.x, p1.y);
+        // ctx.temp.lineTo(p1.x, p1.y);
+        // ctx.temp.stroke();
       },
       [],
     );
@@ -302,8 +262,8 @@ const Doodle = forwardRef<CanvasRefProps, CanvasProps>(
           ...linesRef.current,
           {
             points: [...pointsRef.current],
-            brushColor: bColor || brushColor,
-            brushRadius: bRadius || brushRadius,
+            brushColor: bColor || brushRef.current.brushColor,
+            brushRadius: bRadius || brushRef.current.brushRadius,
           },
         ];
 
@@ -325,7 +285,7 @@ const Doodle = forwardRef<CanvasRefProps, CanvasProps>(
 
         triggerOnChange();
       },
-      [brushColor, brushRadius, triggerOnChange],
+      [triggerOnChange],
     );
 
     // painting
@@ -356,7 +316,7 @@ const Doodle = forwardRef<CanvasRefProps, CanvasProps>(
           for (let i = 1; i < points.length; i++) {
             curTime += timeoutGap;
             window.setTimeout(() => {
-              drawPoints(points.slice(0, i + 1), ctx, {
+              drawPoints(points.slice(i, i + 4), ctx, {
                 brushColor,
                 brushRadius,
               });
@@ -429,46 +389,45 @@ const Doodle = forwardRef<CanvasRefProps, CanvasProps>(
     const handlePointerMove = useCallback(
       (ev: PointerEvent, x: number, y: number) => {
         if (disabled) return;
-        lazyRef.current?.update({ x, y });
-        const isDisabled = !lazyRef.current?.isEnabled();
-
         // Add erase type to the first point in eraser lines
         const point = {
-          ...(erase && { type: 'erase' }),
-          ...lazyRef.current?.brush.toObject(),
+          ...(erase ? { type: 'erase' } : {}),
+          x,
+          y,
         };
 
-        if (
-          (isPressingRef.current && !isDrawingRef.current) ||
-          (isDisabled && isPressingRef.current)
-        ) {
+        const tempCtx = tempRef.current?.getContext('2d');
+        const drawingCtx = drawingRef.current?.getContext('2d');
+
+        if (!tempCtx || !drawingCtx) {
+          return;
+        }
+
+        if (isPressingRef.current && !isDrawingRef.current) {
           // Start drawing and add point
           isDrawingRef.current = true;
           pointsRef.current.push(point);
         }
 
-        const tempCtx = tempRef.current?.getContext('2d');
-        const drawingCtx = drawingRef.current?.getContext('2d');
-        if (isDrawingRef.current && tempCtx && drawingCtx) {
-          // Add new point
-          pointsRef.current.push(lazyRef.current?.brush.toObject());
-
+        if (isDrawingRef.current) {
+          pointsRef.current.push(point);
           // Draw current points
           drawPoints(
-            pointsRef.current,
+            pointsRef.current.slice(-6),
             {
               temp: tempCtx,
               drawing: drawingCtx,
             },
             {
-              brushColor: point.type === 'erase' ? 'erase' : brushColor,
-              brushRadius: brushRadius,
+              brushColor:
+                point.type === 'erase' ? 'erase' : brushRef.current.brushColor,
+              brushRadius: brushRef.current.brushRadius,
               pointerEvent: ev,
             },
           );
         }
       },
-      [brushColor, brushRadius, disabled, drawPoints, erase],
+      [disabled, drawPoints, erase],
     );
 
     const handleDrawStart = useCallback(
@@ -492,18 +451,13 @@ const Doodle = forwardRef<CanvasRefProps, CanvasProps>(
     const handleDrawMove = useCallback(
       (ev: PointerEvent) => {
         ev.preventDefault();
-        window.requestAnimationFrame(() => {
-          if (
-            !interfaceRef.current ||
-            !drawingRef.current ||
-            !tempRef.current
-          ) {
-            return;
-          }
 
-          const { x, y } = getPointerPos(ev, interfaceRef.current);
-          handlePointerMove(ev, x, y);
-        });
+        if (!interfaceRef.current || !drawingRef.current || !tempRef.current) {
+          return;
+        }
+
+        const { x, y } = getPointerPos(ev, interfaceRef.current);
+        handlePointerMove(ev, x, y);
       },
       [handlePointerMove],
     );
@@ -571,51 +525,37 @@ const Doodle = forwardRef<CanvasRefProps, CanvasProps>(
     useEffect(() => {
       const interfaceCanvas = interfaceRef.current;
 
-      function cursorMove() {
+      function cursorMove(evt: PointerEvent) {
         window.requestAnimationFrame(() => {
-          paintCursor();
+          paintCursor(evt);
         });
       }
 
-      interfaceCanvas?.addEventListener('mousemove', cursorMove);
-
-      if (initData) {
-        // loadData(initData, true);
-        // window.setTimeout(() => {
-        //   const initX = window.innerWidth / 2;
-        //   const initY = window.innerHeight / 2;
-        //   lazyRef.current?.update(
-        //     { x: initX - chainLengthRef.current! / 4, y: initY },
-        //     { both: true }
-        //   );
-        //   lazyRef.current?.update(
-        //     { x: initX + chainLengthRef.current! / 4, y: initY },
-        //     { both: false }
-        //   );
-        //   mouseHasMovedRef.current = true;
-        //   valuesChangedRef.current = true;
-        //   clear();
-        //   // Load saveData from prop if it exists
-        // }, 100);
-      }
+      interfaceCanvas?.addEventListener('pointermove', cursorMove);
 
       return function cleanUp() {
-        interfaceCanvas?.removeEventListener('mousemove', cursorMove);
+        interfaceCanvas?.removeEventListener('pointermove', cursorMove);
       };
-    }, [initData, paintCursor]);
+    }, [paintCursor]);
 
     useEffect(() => {
       const canvas = interfaceRef.current;
       if (!canvas || readonly) return;
 
+      function drawBasedOnFramerate(evt: PointerEvent) {
+        window.requestAnimationFrame(() => {
+          handleDrawMove(evt);
+        });
+      }
+
       canvas.addEventListener('pointerdown', handleDrawStart);
-      canvas.addEventListener('pointermove', handleDrawMove);
+      canvas.addEventListener('pointermove', drawBasedOnFramerate);
       canvas.addEventListener('pointerup', handleDrawEnd);
       canvas.addEventListener('pointerleave', handleDrawLeave);
 
       return function cleanUp() {
         canvas.removeEventListener('pointerdown', handleDrawStart);
-        canvas.removeEventListener('pointermove', handleDrawMove);
+        canvas.removeEventListener('pointermove', drawBasedOnFramerate);
         canvas.removeEventListener('pointerup', handleDrawEnd);
         canvas.removeEventListener('pointerleave', handleDrawLeave);
       };
@@ -696,26 +636,10 @@ const Doodle = forwardRef<CanvasRefProps, CanvasProps>(
     useImperativeHandle(
       ref,
       () => ({
-        getChainLength() {
-          return lazyRef.current?.getRadius();
-        },
-        setChainLength(chainLength: number) {
-          const canvas = interfaceRef.current;
-          if (canvas && lazyRef.current) {
-            lazyRef.current.setRadius(chainLength);
-            const pointer = lazyRef.current.getPointerCoordinates();
-            let brush = lazyRef.current.getBrushCoordinates();
-            const distance = lazyRef.current.getDistance();
-            if (distance > 0 && distance > chainLength) {
-              brush = pointBtw(pointer, brush, chainLength / distance);
-            }
-            drawInterface(canvas, { pointer, brush });
-          }
-        },
-        undo: () => undo(),
-        clear: () => clear(),
+        undo: undo,
+        clear: clear,
       }),
-      [clear, drawInterface, undo],
+      [clear, undo],
     );
 
     return (

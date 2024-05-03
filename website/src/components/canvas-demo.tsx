@@ -3,7 +3,6 @@ import { useRef, useState } from 'react';
 import { BrushProps, CanvasDoodle } from 'react-canvas-doodle';
 
 export const CanvasDemo = () => {
-  const [chainLength, setChainLength] = useState(0);
   const [displayGrid, setDisplayGrid] = useState(true);
   const [readonly, setReadonly] = useState(false);
   const doodleRef = useRef(null);
@@ -17,7 +16,6 @@ export const CanvasDemo = () => {
       <div className="border">
         <CanvasDoodle
           ref={doodleRef}
-          initProps={{ chainLength: 0 }}
           gridProps={{ displayGrid: displayGrid }}
           brushProps={brushProps}
           width={size.width}
@@ -26,20 +24,6 @@ export const CanvasDemo = () => {
         />
       </div>
       <div className="flex flex-col gap-2 p-2">
-        <label>
-          Chain Length:
-          <input
-            type="range"
-            min={0}
-            max={200}
-            value={chainLength}
-            onChange={(e) => {
-              setChainLength(Number(e.currentTarget.value));
-              doodleRef.current.setChainLength(Number(e.currentTarget.value));
-            }}
-          />
-          <div>{chainLength}</div>
-        </label>
         <label className="inline">
           Display grid:
           <input
