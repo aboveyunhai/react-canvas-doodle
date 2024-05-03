@@ -5,5 +5,4 @@ it's partially broken
 
 - only contain drawing features.
 - rewrite with hook, type-safe.
-- some performance tweaks.
 
