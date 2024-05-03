@@ -1,7 +1,11 @@
 import { CSSProperties } from 'react';
 import { Point } from '.';
 
-export function setCanvasSize(canvas: HTMLCanvasElement, width: number, height: number) {
+export function setCanvasSize(
+  canvas: HTMLCanvasElement,
+  width: number,
+  height: number,
+) {
   canvas.width = width;
   canvas.height = height;
 }
@@ -33,7 +37,10 @@ export function clearCanvas(canvas: HTMLCanvasElement) {
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 }
 
-export function drawGrid(canvas: HTMLCanvasElement, color: NonNullable<CSSProperties['color']>) {
+export function drawGrid(
+  canvas: HTMLCanvasElement,
+  color: NonNullable<CSSProperties['color']>,
+) {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
 
@@ -62,6 +69,22 @@ export function drawGrid(canvas: HTMLCanvasElement, color: NonNullable<CSSProper
   ctx.stroke();
 }
 
+export function getLineWidth(brushRadius: number, ev?: PointerEvent) {
+  switch (ev?.pointerType) {
+    case 'touch': {
+      if (ev.width < 10 && ev.height < 10) {
+        return (ev.width + ev.height) * 2 + 10;
+      } else {
+        return (ev.width + ev.height - 40) / 2;
+      }
+    }
+    case 'pen':
+      return ev.pressure * 8;
+    default:
+      return brushRadius;
+  }
+}
+
 /**
  * Original from: https://stackoverflow.com/questions/21961839/simulation-background-size-cover-in-canvas
  * Original By Ken Fyrstenberg Nilsen
@@ -80,7 +103,16 @@ type DrawImageProps = {
   offsetY?: number;
 };
 
-export default function drawImageProp({ ctx, img, x = 0, y = 0, w = ctx.canvas.width, h = ctx.canvas.height, offsetX = 0.5, offsetY = 0.5 }: DrawImageProps) {
+export default function drawImageProp({
+  ctx,
+  img,
+  x = 0,
+  y = 0,
+  w = ctx.canvas.width,
+  h = ctx.canvas.height,
+  offsetX = 0.5,
+  offsetY = 0.5,
+}: DrawImageProps) {
   // keep bounds [0.0, 1.0]
   if (offsetX < 0) offsetX = 0;
   if (offsetY < 0) offsetY = 0;

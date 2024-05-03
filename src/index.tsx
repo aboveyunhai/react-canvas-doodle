@@ -4,13 +4,13 @@ import React, {
   useCallback,
   useEffect,
   useImperativeHandle,
-  useLayoutEffect,
   useRef,
   useState,
 } from 'react';
 import {
   clearCanvas,
   drawGrid,
+  getLineWidth,
   getPointerPos,
   pointBtw,
   setCanvasSize,
@@ -74,6 +74,7 @@ export interface CanvasRefProps {
   clear: () => void;
 }
 
+const granularity = 3;
 // this component is client side only
 // use dynamic import for next.js
 const Doodle = forwardRef<CanvasRefProps, CanvasProps>(
@@ -197,6 +198,7 @@ const Doodle = forwardRef<CanvasRefProps, CanvasProps>(
         {
           brushColor,
           brushRadius,
+          pointerEvent,
         }: {
           brushColor: NonNullable<CSSProperties['color']>;
           brushRadius: number;
@@ -213,8 +215,7 @@ const Doodle = forwardRef<CanvasRefProps, CanvasProps>(
 
         // ctx.temp.clearRect(0, 0, ctx.temp.canvas.width, ctx.temp.canvas.height);
 
-        // ctxTemp.lineWidth = getLineWidth(brushRadius, pointerEvent);
-        ctx.temp.lineWidth = brushRadius * 2;
+        ctx.temp.lineWidth = getLineWidth(brushRadius, pointerEvent) * 2;
 
         let p1 = points[0];
         let p2 = points[1];
@@ -222,8 +223,9 @@ const Doodle = forwardRef<CanvasRefProps, CanvasProps>(
         if (!p1 || !p2) {
           return;
         }
-        ctx.drawing.moveTo(p2.x, p2.y);
+
         ctx.temp.beginPath();
+        ctx.temp.moveTo(p1.x, p2.y);
 
         for (let i = 1; i < points.length; i++) {
           // we pick the point between pi+1 & pi+2 as
@@ -235,15 +237,15 @@ const Doodle = forwardRef<CanvasRefProps, CanvasProps>(
           ctx.temp.quadraticCurveTo(p1.x, p1.y, midPoint.x, midPoint.y);
           p1 = points[i];
           p2 = points[i + 1];
-          ctx.temp.stroke();
         }
 
-        // Draw last line as a straight line while
-        // we wait for the next point to be able to calculate
-        // the bezier control point
-        // ctx.temp.quadraticCurveTo(midPoint.x, midPoint.y, p1.x, p1.y);
-        // ctx.temp.lineTo(p1.x, p1.y);
-        // ctx.temp.stroke();
+        if (p1) {
+          // Draw last line as a straight line while
+          // we wait for the next point to be able to calculate
+          // the bezier control point
+          ctx.temp.lineTo(p1.x, p1.y);
+          ctx.temp.stroke();
+        }
       },
       [],
     );
@@ -316,7 +318,7 @@ const Doodle = forwardRef<CanvasRefProps, CanvasProps>(
           for (let i = 1; i < points.length; i++) {
             curTime += timeoutGap;
             window.setTimeout(() => {
-              drawPoints(points.slice(i, i + 4), ctx, {
+              drawPoints(points, ctx, {
                 brushColor,
                 brushRadius,
               });
@@ -413,7 +415,7 @@ const Doodle = forwardRef<CanvasRefProps, CanvasProps>(
           pointsRef.current.push(point);
           // Draw current points
           drawPoints(
-            pointsRef.current.slice(-6),
+            pointsRef.current,
             {
               temp: tempCtx,
               drawing: drawingCtx,
@@ -477,12 +479,16 @@ const Doodle = forwardRef<CanvasRefProps, CanvasProps>(
       [saveLine],
     );
 
-    const handleDrawLeave = useCallback((ev: PointerEvent) => {
-      ev.preventDefault();
-      // Stop drawing & save the drawn line
-      isDrawingRef.current = false;
-      isPressingRef.current = false;
-    }, []);
+    const handleDrawLeave = useCallback(
+      (ev: PointerEvent) => {
+        ev.preventDefault();
+        // Stop drawing & save the drawn line
+        isDrawingRef.current = false;
+        isPressingRef.current = false;
+        saveLine();
+      },
+      [saveLine],
+    );
 
     const undo = useCallback(() => {
       const prev = linesRef.current.slice(0, -1);
@@ -501,25 +507,6 @@ const Doodle = forwardRef<CanvasRefProps, CanvasProps>(
       }
       triggerOnChange();
     }, [clear, simulateDrawingLines, triggerOnChange]);
-
-    const getLineWidth = useCallback(
-      (brushRadius: number, ev?: PointerEvent) => {
-        switch (ev?.pointerType) {
-          case 'touch': {
-            if (ev.width < 10 && ev.height < 10) {
-              return (ev.width + ev.height) * 2 + 10;
-            } else {
-              return (ev.width + ev.height - 40) / 2;
-            }
-          }
-          case 'pen':
-            return ev.pressure * 8;
-          default:
-            return brushRadius;
-        }
-      },
-      [],
-    );
 
     // on mount
     useEffect(() => {
@@ -569,7 +556,7 @@ const Doodle = forwardRef<CanvasRefProps, CanvasProps>(
 
     // div container resize causes rerender
     // use requestAnimationFrame to handle canvas element flicking issue
-    useLayoutEffect(
+    useEffect(
       function interfaceAndPrevRect() {
         setPrevRect({
           width,
@@ -587,7 +574,7 @@ const Doodle = forwardRef<CanvasRefProps, CanvasProps>(
       [height, width],
     );
 
-    useLayoutEffect(
+    useEffect(
       function gridCanvas() {
         const rid = window.requestAnimationFrame(() => {
           if (gridRef.current) {
@@ -604,7 +591,7 @@ const Doodle = forwardRef<CanvasRefProps, CanvasProps>(
       [displayGrid, gridColor, height, width],
     );
 
-    useLayoutEffect(
+    useEffect(
       function tempAndDrawingCanvas() {
         const rid = window.requestAnimationFrame(() => {
           if (tempRef.current) {
